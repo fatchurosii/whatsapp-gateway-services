@@ -3,3 +3,6 @@ node_modules/
 .wwebjs_cache
 .env
 session-data/
+logs/
+.DS_Store
+npm-debug.log
