@@ -73,6 +73,11 @@ cp .env.example .env
 node index.js
 ```
 
+### 5. Run on PM2 
+```bash 
+pm2 start ecosystem.config.js
+````
+
 
 ## Environment Variables
 
