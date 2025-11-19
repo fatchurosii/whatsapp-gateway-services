@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const qrcode = require('qrcode');
+const fs = require('fs');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 require('dotenv').config();
 
@@ -12,20 +13,12 @@ const TOKEN = process.env.API_TOKEN;
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
-// WhatsApp Client Configuration
+// WhatsApp Client
 const client = new Client({
-  authStrategy: new LocalAuth({
-    dataPath: './session-data'  // Custom session storage path
-  }),
+  authStrategy: new LocalAuth({ dataPath: './session-data' }),
   puppeteer: {
-    // executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser',
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--single-process'
-    ]
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
   },
   webVersionCache: {
     type: 'remote',
@@ -33,127 +26,143 @@ const client = new Client({
   }
 });
 
-// State Management
-let qrCode = null;
+// State
 let isReady = false;
+let qrCode = null;
 
 // Event Handlers
 client.on('qr', qr => {
   qrCode = qr;
-  console.log('QR Received - Scan with your phone');
+  console.log('[QR] QR code received');
   qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
-    if (err) throw err;
-    console.log(url);
+    if (err) console.error('[QR] Terminal QR generation error:', err);
+    else console.log('[QR] Terminal QR:\n', url);
   });
 });
 
 client.on('ready', () => {
   isReady = true;
-  console.log('✅ Client is ready');
+  console.log('[WHATSAPP] Client ready');
 });
 
-client.on('disconnected', (reason) => {
-  isReady = false;
-  console.log('❌ Client disconnected:', reason);
-  setTimeout(() => client.initialize(), 5000);  // Auto-reconnect
-});
+client.on('auth_failure', msg => console.error('[WHATSAPP] Authentication failure:', msg));
 
-client.initialize();
+client.initialize().catch(err => console.error('[WHATSAPP] Initialization error:', err));
+process.on('unhandledRejection', reason => console.error('[PROCESS] Unhandled Rejection:', reason));
 
-// Authentication Middleware
+// Auth middleware
 const authenticate = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  if (!authHeader) {
-    return res.status(401).json({ error: 'Authorization header missing' });
-  }
-
+  if (!authHeader) return res.status(401).json({ error: 'Authorization header missing' });
   const token = authHeader.split(' ')[1];
-  if (token !== TOKEN) {
-    return res.status(403).json({ error: 'Invalid token' });
-  }
+  if (token !== TOKEN) return res.status(403).json({ error: 'Invalid token' });
   next();
 };
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'running',
-    whatsapp: isReady ? 'connected' : 'disconnected'
-  });
+  res.json({ status: 'running', whatsapp: isReady ? 'connected' : 'disconnected' });
 });
 
 app.get('/qr', authenticate, async (req, res) => {
-  if (!qrCode) {
-    return res.status(404).json({ error: 'QR not available' });
-  }
-  
+  if (!qrCode) return res.status(404).json({ error: 'QR not available' });
+
   try {
     const qrImage = await qrcode.toDataURL(qrCode);
     res.send(`
       <html>
-        <head>
-          <title>WhatsApp QR</title>
-          <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-            img { max-width: 300px; margin: 20px auto; display: block; }
-          </style>
-        </head>
-        <body>
+        <head><title>WhatsApp QR</title></head>
+        <body style="font-family:Arial;text-align:center;padding:20px">
           <h2>Scan WhatsApp QR Code</h2>
-          <img src="${qrImage}" />
+          <img src="${qrImage}" style="max-width:300px;margin:20px auto;display:block;" />
           <p>Scan this code with your phone</p>
         </body>
       </html>
     `);
-    console.log('QR Code Success')
+    console.log('[QR] QR code page served successfully');
   } catch (err) {
-    console.error('QR generation error:', err);
+    console.error('[QR] Error generating QR page:', err);
     res.status(500).json({ error: 'Failed to generate QR' });
   }
 });
 
 app.post('/send-message', authenticate, async (req, res) => {
   const { number, message } = req.body;
-  
-  if (!number || !message) {
-    return res.status(400).json({ error: 'Number and message required' });
-  }
+
+  if (!number || !message) return res.status(400).json({ error: 'Number and message required' });
 
   try {
+    if (!isReady) return res.status(503).json({ error: 'WhatsApp client not ready' });
+
     const formattedNumber = number.startsWith('0') ? '62' + number.slice(1) : number;
     const chatId = `${formattedNumber}@c.us`;
-    
-    if (!isReady) {
-      return res.status(503).json({ error: 'WhatsApp client not ready' });
-    }
 
     const sentMessage = await client.sendMessage(chatId, message);
-    res.json({
-      success: true,
-      messageId: sentMessage.id.id,
-      timestamp: sentMessage.timestamp
-    });
-    console.log('Send Message Success with ID: ', sentMessage.id.id)
-  } catch (error) {
-    console.error('Send message error:', error);
-    res.status(500).json({ error: error.message });
+    console.log(`[SEND] Text message sent to ${formattedNumber}, ID: ${sentMessage.id.id}`);
+    res.json({ success: true, messageId: sentMessage.id.id, timestamp: sentMessage.timestamp });
+  } catch (err) {
+    console.error('[SEND] Error sending text message:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/logout', authenticate, async (req, res) => {
+  try {
+    await client.destroy();
+    console.log('[LOGOUT] WhatsApp client destroyed');
+
+    if (fs.existsSync('./session-data')) {
+      console.log('[LOGOUT] Removing session-data folder...');
+      fs.rmSync('./session-data', { recursive: true, force: true });
+      console.log('[LOGOUT] Session-data cleared');
+    }
+
+    res.json({ success: true, message: 'Logged out and session cleared' });
+  } catch (err) {
+    console.error('[LOGOUT] Error during logout:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Error Handling
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('[ERROR] Internal server error:', err.stack);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start Server
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+// Start server
+app.listen(port, () => console.log(`[SERVER] Server running on port ${port}`));
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('[PROCESS] Shutting down gracefully...');
+  try {
+    await client.destroy();
+    console.log('[WHATSAPP] Client destroyed');
+  } catch (err) {
+    console.error('[WHATSAPP] Error destroying client:', err);
+  }
+  process.exit(0);
 });
 
-// Graceful Shutdown
-process.on('SIGINT', () => {
-  console.log('Shutting down gracefully...');
-  client.destroy().then(() => process.exit(0));
-});
+client.on('disconnected', async (reason) => {
+  console.log('[WHATSAPP] Disconnected:', reason);
+  isReady = false;
 
+  if (reason === 'LOGOUT') {
+    console.log('[WHATSAPP] Detected logout from WhatsApp (Phone Client)');
+    try {
+      await client.destroy();
+      if (fs.existsSync('./session-data')) {
+        fs.rmSync('./session-data', { recursive: true, force: true });
+        console.log('[WHATSAPP] Session-data cleared');
+      }
+      console.log('[WHATSAPP] Please scan QR again to reconnect');
+    } catch (err) {
+      console.error('[WHATSAPP] Error clearing session after logout:', err);
+    }
+  } else {
+    console.log('[WHATSAPP] Reconnecting in 5 seconds...');
+    setTimeout(() => client.initialize(), 5000);
+  }
+});
