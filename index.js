@@ -13,26 +13,17 @@ const TOKEN = process.env.API_TOKEN;
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
-// WhatsApp Client
-let client;
+let client = null;
 let isReady = false;
 let qrCode = null;
+let isInitializing = false;
+let isDestroying = false;
 
-// Function to initialize client
-const initClient = () => {
-  client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './session-data' }),
-    puppeteer: {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
-    },
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
-    }
-  });
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  client.on('qr', qr => {
+// Register events for a client instance
+function registerClientEvents(cli) {
+  cli.on('qr', qr => {
     qrCode = qr;
     console.log('[QR] QR code received');
     qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
@@ -41,57 +32,149 @@ const initClient = () => {
     });
   });
 
-  client.on('ready', () => {
+  cli.on('ready', () => {
     isReady = true;
     console.log('[WHATSAPP] Client ready');
   });
 
-  client.on('auth_failure', async msg => {
-    console.error('[WHATSAPP] Authentication failure:', msg);
-    await clearSession();
-    console.log('[WHATSAPP] Please scan QR again to reconnect');
+  cli.on('authenticated', () => {
+    console.log('[WHATSAPP] Client authenticated');
   });
 
-  client.on('disconnected', async reason => {
+  cli.on('auth_failure', async msg => {
+    console.error('[WHATSAPP] Authentication failure:', msg);
+    await safeResetClient('auth_failure');
+  });
+
+  cli.on('disconnected', async reason => {
     console.log('[WHATSAPP] Disconnected:', reason);
     isReady = false;
 
     if (reason === 'LOGOUT') {
-      console.log('[WHATSAPP] Detected logout from WhatsApp (Phone Client)');
-      await clearSession();
-      console.log('[WHATSAPP] Please scan QR again to reconnect');
+      console.log('[WHATSAPP] Logout detected from phone. Resetting session and re-initializing...');
+      await safeResetClient('logout');
     } else {
-      console.log('[WHATSAPP] Reconnecting in 5 seconds...');
-      setTimeout(async () => {
-        await clearSession();
-        await initClient();
-      }, 5000);
+      console.log('[WHATSAPP] Unexpected disconnect. Attempting to reset client in 5s...');
+      setTimeout(() => safeResetClient('disconnect'), 5000);
     }
   });
 
-  client.initialize().catch(err => console.error('[WHATSAPP] Initialization error:', err));
-};
+  cli.on('error', async (err) => {
+    console.error('[WHATSAPP] Client error:', err);
 
-// Clear session function
-const clearSession = async () => {
+    if (err && String(err).includes('Target closed')) {
+      console.log('[WHATSAPP] Detected target closed error -> resetting client');
+      await safeResetClient('target_closed');
+    }
+  });
+}
+
+async function startClient() {
+  if (isInitializing) {
+    console.log('[WHATSAPP] startClient called but initialization already in progress');
+    return;
+  }
+  isInitializing = true;
+
   try {
-    if (client) {
+    client = new Client({
+      authStrategy: new LocalAuth({ dataPath: './session-data' }),
+      puppeteer: {
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--single-process'
+        ]
+      }
+    });
+
+    registerClientEvents(client);
+
+    console.log('[WHATSAPP] Initializing client...');
+    await client.initialize();
+    console.log('[WHATSAPP] client.initialize() resolved');
+  } catch (err) {
+    console.error('[WHATSAPP] Initialization error:', err);
+    try {
+      if (client) {
+        await safeDestroyClient();
+      }
+    } catch (e) {
+      console.error('[WHATSAPP] Error during cleanup after failed init:', e);
+    }
+  
+    console.log('[WHATSAPP] Waiting 5s before next init attempt...');
+    await wait(5000);
+  } finally {
+    isInitializing = false;
+  }
+}
+
+// Safe destroy the current client (if any)
+async function safeDestroyClient() {
+  if (!client) return;
+  if (isDestroying) {
+    console.log('[WHATSAPP] destroy already in progress');
+    return;
+  }
+  isDestroying = true;
+
+  try {
+    try {
+      // await destroy but guard errors
       await client.destroy();
       console.log('[WHATSAPP] Client destroyed');
+    } catch (err) {
+      console.warn('[WHATSAPP] client.destroy() error (ignored):', err);
     }
+    client = null;
+  } finally {
+    isDestroying = false;
+  }
+}
+
+// Safe reset: destroy + remove session-data + start new client
+async function safeResetClient(reason = 'manual') {
+  console.log(`[WHATSAPP] safeResetClient triggered (${reason})`);
+  // Prevent concurrent resets
+  if (isDestroying || isInitializing) {
+    console.log('[WHATSAPP] Reset already in progress, skipping duplicate request');
+    return;
+  }
+
+  // 1. Destroy current client
+  await safeDestroyClient();
+
+  // 2. Remove session-data folder (if exists)
+  try {
     if (fs.existsSync('./session-data')) {
       fs.rmSync('./session-data', { recursive: true, force: true });
       console.log('[WHATSAPP] Session-data cleared');
     }
-    qrCode = null;
-    isReady = false;
   } catch (err) {
-    console.error('[WHATSAPP] Error clearing session:', err);
+    console.error('[WHATSAPP] Error clearing session-data:', err);
   }
-};
+
+  // Reset flags/state
+  qrCode = null;
+  isReady = false;
+
+  // 3. Small delay to allow Chrome processes to exit fully
+  await wait(5000);
+
+  // 4. Start new client
+  await startClient();
+}
 
 // Start initial client
-initClient();
+startClient();
+
+// Global unhandled rejection logger
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[PROCESS] Unhandled Rejection:', reason);
+});
 
 // Auth middleware
 const authenticate = (req, res, next) => {
@@ -108,7 +191,9 @@ app.get('/', (req, res) => {
 });
 
 app.get('/qr', authenticate, async (req, res) => {
-  if (!qrCode) return res.status(404).json({ error: 'QR not available' });
+  if (!qrCode) {
+    return res.status(400).json({ error: 'QR not available yet, please wait a moment' });
+  }
 
   try {
     const qrImage = await qrcode.toDataURL(qrCode);
@@ -134,7 +219,7 @@ app.post('/send-message', authenticate, async (req, res) => {
   if (!number || !message) return res.status(400).json({ error: 'Number and message required' });
 
   try {
-    if (!isReady) return res.status(503).json({ error: 'WhatsApp client not ready' });
+    if (!isReady || !client) return res.status(503).json({ error: 'WhatsApp client not ready' });
 
     const formattedNumber = number.startsWith('0') ? '62' + number.slice(1) : number;
     const chatId = `${formattedNumber}@c.us`;
@@ -150,7 +235,7 @@ app.post('/send-message', authenticate, async (req, res) => {
 
 app.post('/logout', authenticate, async (req, res) => {
   try {
-    await clearSession();
+    await safeResetClient('manual_logout');
     res.json({ success: true, message: 'Logged out and session cleared' });
   } catch (err) {
     console.error('[LOGOUT] Error during logout:', err);
@@ -170,6 +255,6 @@ app.listen(port, () => console.log(`[SERVER] Server running on port ${port}`));
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('[PROCESS] Shutting down gracefully...');
-  await clearSession();
+  await safeDestroyClient();
   process.exit(0);
 });
