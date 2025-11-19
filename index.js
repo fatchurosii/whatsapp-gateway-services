@@ -14,41 +14,84 @@ app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
 // WhatsApp Client
-const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: './session-data' }),
-  puppeteer: {
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
-  },
-  webVersionCache: {
-    type: 'remote',
-    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
-  }
-});
-
-// State
+let client;
 let isReady = false;
 let qrCode = null;
 
-// Event Handlers
-client.on('qr', qr => {
-  qrCode = qr;
-  console.log('[QR] QR code received');
-  qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
-    if (err) console.error('[QR] Terminal QR generation error:', err);
-    else console.log('[QR] Terminal QR:\n', url);
+// Function to initialize client
+const initClient = () => {
+  client = new Client({
+    authStrategy: new LocalAuth({ dataPath: './session-data' }),
+    puppeteer: {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
+    },
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+    }
   });
-});
 
-client.on('ready', () => {
-  isReady = true;
-  console.log('[WHATSAPP] Client ready');
-});
+  client.on('qr', qr => {
+    qrCode = qr;
+    console.log('[QR] QR code received');
+    qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
+      if (err) console.error('[QR] Terminal QR generation error:', err);
+      else console.log('[QR] Terminal QR:\n', url);
+    });
+  });
 
-client.on('auth_failure', msg => console.error('[WHATSAPP] Authentication failure:', msg));
+  client.on('ready', () => {
+    isReady = true;
+    console.log('[WHATSAPP] Client ready');
+  });
 
-client.initialize().catch(err => console.error('[WHATSAPP] Initialization error:', err));
-process.on('unhandledRejection', reason => console.error('[PROCESS] Unhandled Rejection:', reason));
+  client.on('auth_failure', async msg => {
+    console.error('[WHATSAPP] Authentication failure:', msg);
+    await clearSession();
+    console.log('[WHATSAPP] Please scan QR again to reconnect');
+  });
+
+  client.on('disconnected', async reason => {
+    console.log('[WHATSAPP] Disconnected:', reason);
+    isReady = false;
+
+    if (reason === 'LOGOUT') {
+      console.log('[WHATSAPP] Detected logout from WhatsApp (Phone Client)');
+      await clearSession();
+      console.log('[WHATSAPP] Please scan QR again to reconnect');
+    } else {
+      console.log('[WHATSAPP] Reconnecting in 5 seconds...');
+      setTimeout(async () => {
+        await clearSession();
+        await initClient();
+      }, 5000);
+    }
+  });
+
+  client.initialize().catch(err => console.error('[WHATSAPP] Initialization error:', err));
+};
+
+// Clear session function
+const clearSession = async () => {
+  try {
+    if (client) {
+      await client.destroy();
+      console.log('[WHATSAPP] Client destroyed');
+    }
+    if (fs.existsSync('./session-data')) {
+      fs.rmSync('./session-data', { recursive: true, force: true });
+      console.log('[WHATSAPP] Session-data cleared');
+    }
+    qrCode = null;
+    isReady = false;
+  } catch (err) {
+    console.error('[WHATSAPP] Error clearing session:', err);
+  }
+};
+
+// Start initial client
+initClient();
 
 // Auth middleware
 const authenticate = (req, res, next) => {
@@ -88,7 +131,6 @@ app.get('/qr', authenticate, async (req, res) => {
 
 app.post('/send-message', authenticate, async (req, res) => {
   const { number, message } = req.body;
-
   if (!number || !message) return res.status(400).json({ error: 'Number and message required' });
 
   try {
@@ -108,15 +150,7 @@ app.post('/send-message', authenticate, async (req, res) => {
 
 app.post('/logout', authenticate, async (req, res) => {
   try {
-    await client.destroy();
-    console.log('[LOGOUT] WhatsApp client destroyed');
-
-    if (fs.existsSync('./session-data')) {
-      console.log('[LOGOUT] Removing session-data folder...');
-      fs.rmSync('./session-data', { recursive: true, force: true });
-      console.log('[LOGOUT] Session-data cleared');
-    }
-
+    await clearSession();
     res.json({ success: true, message: 'Logged out and session cleared' });
   } catch (err) {
     console.error('[LOGOUT] Error during logout:', err);
@@ -136,33 +170,6 @@ app.listen(port, () => console.log(`[SERVER] Server running on port ${port}`));
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('[PROCESS] Shutting down gracefully...');
-  try {
-    await client.destroy();
-    console.log('[WHATSAPP] Client destroyed');
-  } catch (err) {
-    console.error('[WHATSAPP] Error destroying client:', err);
-  }
+  await clearSession();
   process.exit(0);
-});
-
-client.on('disconnected', async (reason) => {
-  console.log('[WHATSAPP] Disconnected:', reason);
-  isReady = false;
-
-  if (reason === 'LOGOUT') {
-    console.log('[WHATSAPP] Detected logout from WhatsApp (Phone Client)');
-    try {
-      await client.destroy();
-      if (fs.existsSync('./session-data')) {
-        fs.rmSync('./session-data', { recursive: true, force: true });
-        console.log('[WHATSAPP] Session-data cleared');
-      }
-      console.log('[WHATSAPP] Please scan QR again to reconnect');
-    } catch (err) {
-      console.error('[WHATSAPP] Error clearing session after logout:', err);
-    }
-  } else {
-    console.log('[WHATSAPP] Reconnecting in 5 seconds...');
-    setTimeout(() => client.initialize(), 5000);
-  }
 });
