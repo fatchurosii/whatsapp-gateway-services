@@ -61,16 +61,19 @@ async function qr(req, res) {
       device
     }
     
-    return res.send(`<html>
-            <head><title>WhatsApp QR</title></head>
-            <body style="font-family:Arial;text-align:center;padding:20px">
-              <h2>Scan WhatsApp QR Code</h2>
-              <img src="${dataUrl}" style="max-width:300px;margin:20px auto;display:block;" />
-              <p>Scan this code with your phone</p>
-            </body>
-          </html>
-        `);
-    // return responseUtils.SuccessResponse(res, "Qr Berhasil ditampilkan", resData);
+    //uncomment if development
+    
+    // return res.send(`<html>
+    //         <head><title>WhatsApp QR</title></head>
+    //         <body style="font-family:Arial;text-align:center;padding:20px">
+    //           <h2>Scan WhatsApp QR Code</h2>
+    //           <img src="${dataUrl}" style="max-width:300px;margin:20px auto;display:block;" />
+    //           <p>Scan this code with your phone</p>
+    //         </body>
+    //       </html>
+    //     `);
+    // end uncomment
+    return responseUtils.SuccessResponse(res, "Qr Berhasil ditampilkan", resData);
     
   } catch (err) {
     console.error('[CONTROLLER] qr error', err);
