@@ -2,6 +2,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const fs = require('fs');
+const db = require('../models');
 
 const WAIT = (ms) => new Promise(r => setTimeout(r, ms));
 const clients = new Map();
@@ -17,9 +18,15 @@ function registerEvents(cli, clientId) {
     console.log(`[${clientId}] QR received`);
   });
 
-  cli.on('ready', () => {
+  cli.on('ready', async () => {
     const store = clients.get(clientId);
-    if (store) store.isReady = true;
+    if (store) {
+      store.isReady = true;
+      await db.Device.update(
+        { client_status: 1 },
+        { where: { deviceKey: clientId } }
+      );
+    }
     console.log(`[${clientId}] Client ready`);
   });
 
@@ -33,7 +40,13 @@ function registerEvents(cli, clientId) {
   cli.on('disconnected', async reason => {
     console.log(`[${clientId}] Disconnected:`, reason);
     const store = clients.get(clientId);
-    if (store) store.isReady = false;
+    if (store) {
+      store.isReady = false;
+      await db.Device.update(
+        { client_status: 0 },
+        { where: { deviceKey: clientId } }
+      );
+    }
     if (reason === 'LOGOUT') await resetClient(clientId, 'logout');
   });
 
@@ -121,6 +134,11 @@ async function destroyClient(clientId) {
     }
 
     clients.delete(clientId);
+    await db.Device.update(
+      { client_status: 0 },
+      { where: { deviceKey: clientId } }
+    );
+    
   } finally {
     store.destroying = false;
   }

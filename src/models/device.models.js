@@ -9,9 +9,9 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: () => uuidv7(),
     },
-    name: {type: DataTypes.STRING(50), unique:true, allowNull:false, validate:{notEmpty:true}},
-    whatsapp_number: { type: DataTypes.STRING(20), unique: true, allowNull:false },
-    deviceKey: { type: DataTypes.STRING(50), unique:true},
+    name: {type: DataTypes.STRING(50), allowNull:false, validate:{notEmpty:true}},
+    whatsapp_number: { type: DataTypes.STRING(20), allowNull:false, validate:{notEmpty:true} },
+    deviceKey: { type: DataTypes.STRING(50), allowNull: false, defaultValue: () => generateRandomKey(16) },
     clientStatus:{type: Boolean, defaultValue: false},
     createdAt: { type: DataTypes.DATE, allowNull: false },
     updatedAt: { type: DataTypes.DATE, allowNull: false }
@@ -32,12 +32,6 @@ module.exports = (sequelize, DataTypes) => {
   
     return result;
   }
-
-
-  Device.beforeSave(async (device) => {
-    const rawKey = generateRandomKey(16);
-      device.deviceKey = rawKey;
-  });
   
 
   return Device;

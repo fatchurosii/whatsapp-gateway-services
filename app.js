@@ -16,7 +16,7 @@ registerRoutes(app);
 
 (async () => {
   try {
-    await db.sequelize.sync({ alter: true });
+    await db.sequelize.sync();
     app.listen(config.port, () => console.log(`[SERVER] Server running on port ${config.port}`));
     
     process.on('SIGINT', async () => {

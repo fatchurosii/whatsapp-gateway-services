@@ -6,9 +6,9 @@ router.get('/clients/status', controller.status);
 
 router.get('/clients/qr', controller.qr);
 
-// router.post('/send', apiToken, controller.sendMessage);
+router.post('/clients/send-message', controller.sendMessage);
 
-// router.post('/clients/logout', apiToken, controller.logout);
+router.post('/clients/logout', controller.logout);
 
 
 module.exports = router;

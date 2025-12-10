@@ -6,11 +6,25 @@ async function status(req, res) {
   try {
     const clientId = req.body.clientId;
     if (!clientId) return responseUtils.BadRequestResponse(res, 'ClientId is required');
+    
+    const device = await db.Device.findOne({
+      where: {
+        deviceKey: clientId
+      }
+    })
+    
+    if (!device) return responseUtils.NotFoundResponse(res, 'Device not found');
+    
+    const client = whatsappService.getClient(clientId);
+    if(!client){
+      return responseUtils.NotFoundResponse(res, 'Client not found');
+    }
     const st = whatsappService.getStatus(clientId);
     if(!st.exists){
       return responseUtils.NotFoundResponse(res, 'Client not found');
     }
-    return responseUtils.SuccessResponse(res)
+    
+    return responseUtils.SuccessResponse(res, 'Status retrieved successfully', st);
   } catch (err) {
     console.error('[CONTROLLER] status error', err);
     return responseUtils.InternalServerErrorResponse(res, err.message);
@@ -46,7 +60,17 @@ async function qr(req, res) {
       dataUrl,
       device
     }
-    return responseUtils.SuccessResponse(res, "Qr Berhasil ditampilkan", resData);
+    
+    return res.send(`<html>
+            <head><title>WhatsApp QR</title></head>
+            <body style="font-family:Arial;text-align:center;padding:20px">
+              <h2>Scan WhatsApp QR Code</h2>
+              <img src="${dataUrl}" style="max-width:300px;margin:20px auto;display:block;" />
+              <p>Scan this code with your phone</p>
+            </body>
+          </html>
+        `);
+    // return responseUtils.SuccessResponse(res, "Qr Berhasil ditampilkan", resData);
     
   } catch (err) {
     console.error('[CONTROLLER] qr error', err);
@@ -54,28 +78,79 @@ async function qr(req, res) {
   }
 }
 
-// async function sendMessage(req, res) {
-//   try {
-//     const { clientId, number, message } = req.body;
-//     if (!clientId || !number || !message) return res.status(400).json({ error: 'clientId, number and message required' });
-//     const sent = await whatsappService.sendMessage(clientId, number, message);
-//     res.json({ success: true, id: sent.id.id, timestamp: sent.timestamp });
-//   } catch (err) {
-//     console.error('[CONTROLLER] sendMessage error', err);
-//     res.status(500).json({ error: err.message });
-//   }
-// }
 
-// async function logout(req, res) {
-// try {
-//   const clientId = req.body.clientId;
-//     if (!clientId) return res.status(400).json({ error: 'clientId required' });
-//     await whatsappService.resetClient(clientId, 'manual_logout');
-//     res.json({ success: true, clientId });
-//   } catch (err) {
-//     console.error('[CONTROLLER] logout error', err);
-//     res.status(500).json({ error: err.message });
-//   }
-// }
 
-module.exports = {status, qr};
+async function sendMessage(req, res) {
+  try {
+    const { clientId, number, message } = req.body;
+    
+    if(!clientId || !message || !number){
+      return responseUtils.BadRequestResponse(res, 'clientId, number, message are required');
+    }
+    
+    const device = await db.Device.findOne({
+      deviceKey: clientId
+    })
+    
+    if(!device){
+      return responseUtils.NotFoundResponse(res, 'Device not found');
+    }
+  
+    const sent = await whatsappService.sendMessage(clientId, number, message);
+
+    if(sent.id.id === null || sent.id.id === undefined){
+      return responseUtils.BadRequestResponse(res, 'Send message failed');
+    }
+    
+    const responseData = {
+      success: true,
+      id: sent.id.id,
+      timestamp: sent.timestamp
+    };
+    
+    return responseUtils.SuccessResponse(res, 'Send message successfully', responseData);
+    
+  } catch (err) {
+    console.error('[CONTROLLER] sendMessage error', err);
+    return responseUtils.InternalServerErrorResponse(res, err.message);
+  }
+}
+
+async function logout(req, res) {
+  try {
+    const clientId = req.body.clientId;
+      if (!clientId) {
+        return responseUtils.BadRequestResponse(res, 'clientId is required');
+      }
+      
+      const device = await db.Device.findOne({
+        deviceKey: clientId
+      })
+      
+      if(!device){
+        return responseUtils.NotFoundResponse(res, 'Device not found');
+      }
+      
+      const deviceKey = device.deviceKey ? device?.deviceKey : null;
+    
+      if(!deviceKey){
+        return responseUtils.NotFoundResponse(res, 'Device key not found')
+      }
+      
+      const client = whatsappService.getClient(deviceKey)
+      
+      if(!client){
+        return responseUtils.NotFoundResponse(res, `Client with device id : ${deviceKey} not found`)
+      }
+      
+      await whatsappService.resetClient(deviceKey, 'manual_logout');
+      
+      return responseUtils.SuccessResponse(res, 'Logout successfully')
+      
+    } catch (err) {
+      console.error('[CONTROLLER] logout error', err);
+      return responseUtils.InternalServerErrorResponse(res, err.message)
+    }
+}
+
+module.exports = {status, qr, sendMessage, logout};
