@@ -22,7 +22,7 @@ module.exports = {
   apps: [
     {
       name: process.env.APP_NAME,
-      script: path.join(__dirname, 'index.js'),
+      script: path.join(__dirname, 'app.js'),
       cwd: __dirname,
       exec_mode: 'cluster',
       instances: 1,
