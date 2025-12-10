@@ -38,6 +38,7 @@ module.exports = (sequelize, DataTypes) => {
     const rawKey = generateRandomKey(16);
       device.deviceKey = rawKey;
   });
+  
 
   return Device;
 };

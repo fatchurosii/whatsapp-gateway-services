@@ -1,41 +1,58 @@
+const db = require('../models');
 const whatsappService = require('../services/whatsapp.service');
 const responseUtils = require('../utils/response.utils');
-
-async function create(req, res){
-  try {
-    const clientId = req.body.clientId;
-    if (!clientId) return responseUtils.UnauthorizedResponse(res, 'ClientId is required');
-    await whatsappService.createClient(clientId);
-    res.json({ success: true, clientId });
-  } catch (err) {
-    console.error('[CONTROLLER] create client error', err);
-    return responseUtils.InternalServerErrorResponse(res, err.message);
-  }
-}
 
 async function status(req, res) {
   try {
     const clientId = req.body.clientId;
-    if (!clientId) return responseUtils.UnauthorizedResponse(res, 'ClientId is required');
+    if (!clientId) return responseUtils.BadRequestResponse(res, 'ClientId is required');
     const st = whatsappService.getStatus(clientId);
-    res.json(st);
+    if(!st.exists){
+      return responseUtils.NotFoundResponse(res, 'Client not found');
+    }
+    return responseUtils.SuccessResponse(res)
   } catch (err) {
     console.error('[CONTROLLER] status error', err);
     return responseUtils.InternalServerErrorResponse(res, err.message);
   }
 }
 
-// async function qr(req, res) {
-//   try {
-//     const clientId = req.params.clientId || req.body.clientId;
-//     if (!clientId) return res.status(400).json({ error: 'clientId required' });
-//     const dataUrl = await whatsappService.getQrImage(clientId);
-//     res.send(`\n<html><body style="font-family:Arial;text-align:center;padding:20px">\n <h2>Scan WhatsApp QR - ${clientId}</h2>\n <img src="${dataUrl}" style="max-width:300px;margin:20px auto;display:block;"/>\n</body></html>`);
-//   } catch (err) {
-//     console.error('[CONTROLLER] qr error', err);
-//     res.status(400).json({ error: err.message });
-//   }
-// }
+async function qr(req, res) {
+  try {
+    const clientId = req.body.clientId;
+    if (!clientId) return responseUtils.BadRequestResponse(res, 'ClientId is required');
+    
+    const device = await db.Device.findOne({
+      where: {
+        deviceKey: clientId
+      }
+    })
+    
+    if (!device) return responseUtils.NotFoundResponse(res, 'Device not found');
+    
+    const deviceKey = device?.deviceKey ? device.deviceKey : null;
+    
+    if(!deviceKey) return responseUtils.BadRequestResponse(res, 'Device key is required');
+    
+    const client = await whatsappService.getClient(deviceKey);
+    
+    if(!client){
+      await whatsappService.createClient(deviceKey);
+    }
+    
+    const dataUrl = await whatsappService.getQrImage(deviceKey);
+    
+    const resData = {
+      dataUrl,
+      device
+    }
+    return responseUtils.SuccessResponse(res, "Qr Berhasil ditampilkan", resData);
+    
+  } catch (err) {
+    console.error('[CONTROLLER] qr error', err);
+    return responseUtils.InternalServerErrorResponse(res, err.message);
+  }
+}
 
 // async function sendMessage(req, res) {
 //   try {
@@ -61,4 +78,4 @@ async function status(req, res) {
 //   }
 // }
 
-module.exports = { create, status};
+module.exports = {status, qr};
