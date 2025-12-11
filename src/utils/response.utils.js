@@ -16,6 +16,19 @@ function buildResponse({
   return base;
 }
 
+function PaginatedResponse(res, message, data) {
+  const code = 200;
+
+  const payload = buildResponse({
+    status: "success",
+    message: message,
+    data,
+    errors: null,
+  });
+
+  return res.status(code).json({ ...payload, data });
+}
+
 function ErrorResponse(
   res,
   statusCode = 500,
@@ -75,6 +88,7 @@ function InternalServerErrorResponse(
 module.exports = {
   ErrorResponse,
   SuccessResponse,
+  PaginatedResponse,
   BadRequestResponse,
   UnauthorizedResponse,
   ForbiddenResponse,
