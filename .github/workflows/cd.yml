@@ -68,13 +68,12 @@ jobs:
           port: 22
           script: |
             set -euxo pipefail
-
-            # go to project dir (absolute path)
+            
             cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
 
             # ensure repo state is what we expect
             git fetch --all
-            git reset --hard origin/dev/v2
+            git pull origin dev/v2
 
             # Check if node v20 is present
             if command -v node >/dev/null 2>&1 && node -v | grep -q '^v20\.'; then
@@ -115,6 +114,6 @@ jobs:
             npm --version
 
             # install dependencies and restart pm2
-            npm ci || npm install
+            npm install --prefer-offline --no-audit --no-fund
             pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
             pm2 save
