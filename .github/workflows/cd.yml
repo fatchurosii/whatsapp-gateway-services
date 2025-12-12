@@ -5,13 +5,12 @@ name: Node.js CD
 
 on:
   push:
-    branches: [ "dev/v2" ]
+    branches: ["dev/v2"]
   pull_request:
-    branches: [ "dev/v2" ]
+    branches: ["dev/v2"]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     strategy:
@@ -19,24 +18,62 @@ jobs:
         node-version: [20.x]
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-    - name: Deploy using ssh
-      uses: appleboy/ssh-action@master
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        username: ${{ secrets.USERNAME }}
-        host: ${{ secrets.HOST }}
-        key: ${{ secrets.SSH_KEY }}
-        port: 22
-        script: |
-          cd ~/home/fatchurrosii/workspace/app/services/whatsapp-gateway
-          git pull origin dev/v2
-          git status
-          npm install
-          pm2 restart ecosystem.config.js
-          pm2 save
-          
-        
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+      - name: debug server config
+        shell: bash
+        run: |
+          #check host
+          if [ -z "${{ secrets.HOST }}" ]; then
+              echo "ERROR: HOST secret is empty or missing"
+              exit 1
+          else
+              echo "OK: HOST secret is present"
+          fi
+
+          #check username
+          if [ -z "${{ secrets.USERNAME }}" ]; then
+              echo "ERROR: USERNAME secret is empty or missing"
+              exit 1
+          else
+              echo "OK: USERNAME secret is present"
+          fi
+
+          #check ssh key
+
+          if [ -z "${{ secrets.SSH_KEY }}" ]; then
+              echo "ERROR: SSH_KEY secret is empty or missing"
+              exit 1
+          else
+              echo "OK: SSH_KEY secret is present"
+
+          # Print the first line (header) of the key and validate it contains BEGIN/OPENSSH
+          header=$(echo "${{ secrets.SSH_KEY }}" | sed -n '1p' || true)
+          if echo "$header" | grep -Ei 'BEGIN|OPENSSH' >/dev/null 2>&1; then
+              echo "OK: SSH_KEY header detected: \"$header\""
+          else
+              echo "WARN: SSH_KEY header not detected (key may be malformed)"
+              fi
+
+          # Print metadata only: byte length (does not reveal key contents)
+            len=$(echo -n "${{ secrets.SSH_KEY }}" | wc -c)
+            echo "SSH_KEY length (bytes): $len"
+          fi
+
+      - name: Deploy using ssh
+        uses: appleboy/ssh-action@master
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          username: ${{ secrets.USERNAME }}
+          host: ${{ secrets.HOST }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            cd ~/home/fatchurrosii/workspace/app/services/whatsapp-gateway
+            git pull origin dev/v2
+            git status
+            npm install
+            pm2 restart ecosystem.config.js
+            pm2 save
