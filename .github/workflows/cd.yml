@@ -1,6 +1,3 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: Node.js CD
 
 on:
@@ -20,12 +17,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
       - name: debug server config
         shell: bash
         run: |
-          #check host
+          # check host
           if [ -z "${{ secrets.HOST }}" ]; then
               echo "ERROR: HOST secret is empty or missing"
               exit 1
@@ -33,7 +35,7 @@ jobs:
               echo "OK: HOST secret is present"
           fi
 
-          #check username
+          # check username
           if [ -z "${{ secrets.USERNAME }}" ]; then
               echo "ERROR: USERNAME secret is empty or missing"
               exit 1
@@ -41,40 +43,78 @@ jobs:
               echo "OK: USERNAME secret is present"
           fi
 
-          #check ssh key
-
+          # check ssh key
           if [ -z "${{ secrets.SSH_KEY }}" ]; then
               echo "ERROR: SSH_KEY secret is empty or missing"
               exit 1
           else
               echo "OK: SSH_KEY secret is present"
-
-          # Print the first line (header) of the key and validate it contains BEGIN/OPENSSH
-          header=$(echo "${{ secrets.SSH_KEY }}" | sed -n '1p' || true)
-          if echo "$header" | grep -Ei 'BEGIN|OPENSSH' >/dev/null 2>&1; then
-              echo "OK: SSH_KEY header detected: \"$header\""
-          else
-              echo "WARN: SSH_KEY header not detected (key may be malformed)"
+              header=$(echo "${{ secrets.SSH_KEY }}" | sed -n '1p' || true)
+              if echo "$header" | grep -Ei 'BEGIN|OPENSSH' >/dev/null 2>&1; then
+                  echo "OK: SSH_KEY header detected: \"$header\""
+              else
+                  echo "WARN: SSH_KEY header not detected (key may be malformed)"
               fi
-
-          # Print metadata only: byte length (does not reveal key contents)
-            len=$(echo -n "${{ secrets.SSH_KEY }}" | wc -c)
-            echo "SSH_KEY length (bytes): $len"
+              len=$(echo -n "${{ secrets.SSH_KEY }}" | wc -c)
+              echo "SSH_KEY length (bytes): $len"
           fi
 
-      - name: Deploy using ssh
-        uses: appleboy/ssh-action@master
+      - name: Deploy using ssh (install/check node v20 via nvm if needed)
+        uses: appleboy/ssh-action@v0.1.5
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: "npm"
-          username: ${{ secrets.USERNAME }}
           host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
           script: |
-            cd ~/home/fatchurrosii/workspace/app/services/whatsapp-gateway
-            git pull origin dev/v2
-            git status
-            npm install
-            pm2 restart ecosystem.config.js
+            set -euxo pipefail
+
+            # go to project dir (absolute path)
+            cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
+
+            # ensure repo state is what we expect
+            git fetch --all
+            git reset --hard origin/dev/v2
+
+            # Check if node v20 is present
+            if command -v node >/dev/null 2>&1 && node -v | grep -q '^v20\.'; then
+              echo "Node v20 is already installed: $(node -v)"
+            else
+              echo "Node v20 not found or different version. Installing via nvm..."
+
+              # load nvm if already installed
+              if [ -s "$HOME/.nvm/nvm.sh" ]; then
+                . "$HOME/.nvm/nvm.sh"
+              fi
+
+              # install nvm if missing (idempotent)
+              if ! command -v nvm >/dev/null 2>&1; then
+                echo "Installing nvm..."
+                curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+
+                # load nvm from standard install locations
+                export NVM_DIR="$HOME/.nvm"
+                [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+                [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+              fi
+
+              # ensure nvm is available now
+              if ! command -v nvm >/dev/null 2>&1; then
+                echo "ERROR: nvm did not install correctly"
+                exit 1
+              fi
+
+              # install and use node 20 (will not reinstall if already present)
+              nvm install 20
+              nvm alias default 20
+              nvm use 20
+              echo "Installed and switched to Node: $(node -v)"
+            fi
+
+            # double-check npm is available
+            npm --version
+
+            # install dependencies and restart pm2
+            npm ci || npm install
+            pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
             pm2 save
