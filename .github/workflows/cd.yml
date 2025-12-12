@@ -1,3 +1,6 @@
+# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
+
 name: Node.js CD
 
 on:
@@ -8,6 +11,7 @@ on:
 
 jobs:
   build:
+
     runs-on: ubuntu-latest
 
     strategy:
@@ -16,14 +20,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-
     - name: Deploy using ssh
-      uses: appleboy/ssh-action@v0.1.5
+      uses: appleboy/ssh-action@master
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
@@ -32,15 +32,11 @@ jobs:
         key: ${{ secrets.SSH_KEY }}
         port: 22
         script: |
-          # go to the correct project directory on the remote server
-          cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
-
-          # update code, install deps and restart process manager
+          cd ~/home/fatchurrosii/workspace/app/services/whatsapp-gateway
           git pull origin dev/v2
           git status
-
-          # prefer npm ci in CI/deploy for reproducible installs (falls back to npm install if you prefer)
-          npm ci || npm install
-
+          npm install
           pm2 restart ecosystem.config.js
           pm2 save
+          
+        
