@@ -69,51 +69,53 @@ jobs:
           script: |
             set -euxo pipefail
             
-            cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
-
-            # ensure repo state is what we expect
-            git fetch --all
-            git pull origin dev/v2
-
-            # Check if node v20 is present
-            if command -v node >/dev/null 2>&1 && node -v | grep -q '^v20\.'; then
-              echo "Node v20 is already installed: $(node -v)"
+            export NVM_DIR="$HOME/.nvm"
+            
+            # Pastikan nvm tersedia di shell saat ini
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+              # shellcheck source=/dev/null
+              . "$NVM_DIR/nvm.sh"
             else
-              echo "Node v20 not found or different version. Installing via nvm..."
-
-              # load nvm if already installed
-              if [ -s "$HOME/.nvm/nvm.sh" ]; then
-                . "$HOME/.nvm/nvm.sh"
-              fi
-
-              # install nvm if missing (idempotent)
-              if ! command -v nvm >/dev/null 2>&1; then
-                echo "Installing nvm..."
-                curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
-
-                # load nvm from standard install locations
-                export NVM_DIR="$HOME/.nvm"
-                [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
-              fi
-
-              # ensure nvm is available now
-              if ! command -v nvm >/dev/null 2>&1; then
-                echo "ERROR: nvm did not install correctly"
-                exit 1
-              fi
-
-              # install and use node 20 (will not reinstall if already present)
-              nvm install 20
-              nvm alias default 20
-              nvm use 20
-              echo "Installed and switched to Node: $(node -v)"
+              echo "nvm not found at $NVM_DIR/nvm.sh — abort"
+              exit 1
             fi
-
-            # double-check npm is available
-            npm --version
-
-            # install dependencies and restart pm2
-            npm install --prefer-offline --no-audit --no-fund
-            pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+            
+            # Pakai Node 20 dan pastikan default
+            nvm install 20 --no-progress --silent
+            nvm alias default 20
+            nvm use 20
+            
+            # Verifikasi
+            echo "Using node: $(which node) $(node -v)"
+            echo "Using npm: $(which npm) $(npm --version)"
+            
+            # Pastikan pm2 terinstal pada node v20 (agar pm2 menunjuk ke node yang sama)
+            if ! command -v pm2 >/dev/null 2>&1; then
+              npm install -g pm2
+            fi
+            echo "pm2 -> $(which pm2)"
+            
+            # (opsional) jika pm2 sebelumnya diinstall global di node lain, paksa reinstall agar symlink sesuai node v20:
+            # npm install -g pm2
+            
+            # lanjutkan deploy: checkout, install deps dan restart
+            cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
+            git fetch --all
+            git reset --hard origin/dev/v2
+            git checkout dev/v2
+            git pull origin dev/v2
+            
+            if [ -f package-lock.json ]; then
+              npm ci --prefer-offline --no-audit --no-fund || npm install --prefer-offline --no-audit --no-fund
+            else
+              npm install --prefer-offline --no-audit --no-fund
+            fi
+            
+            if [ -f ecosystem.config.js ]; then
+              pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+            else
+              pm2 restart whatsapp-gateway || pm2 start --name whatsapp-gateway npm -- start
+            fi
             pm2 save
+            
+            echo "Deploy finished; node: $(node -v), pm2: $(pm2 -v || true)"
