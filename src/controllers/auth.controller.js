@@ -1,29 +1,36 @@
-const db = require('../models');
-const jwtService = require('../services/jwt.service');
-const responseUtils = require('../utils/response.utils');
+const db = require("../models");
+const jwtService = require("../services/jwt.service");
+const responseUtils = require("../utils/response.utils");
 
 exports.register = async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
-    return responseUtils.BadRequestResponse(res, "username and password are required")
+    return responseUtils.BadRequestResponse(
+      res,
+      "username and password are required",
+    );
   }
 
   try {
     const existingUser = await db.User.findOne({ where: { username } });
-    
-    if(existingUser){
-      return responseUtils.BadRequestResponse(res, 'Username already exists')
-    }    
-    
-    const countUser = await db.User.count();
-    
-    if(countUser == 3){
-      return responseUtils.ForbiddenResponse(res, 'Maximum user limit reached');
+
+    if (existingUser) {
+      return responseUtils.BadRequestResponse(res, "Username already exists");
     }
 
-    const user = await db.User.create({ username,  password });
+    const countUser = await db.User.count();
+
+    if (countUser == 3) {
+      return responseUtils.ForbiddenResponse(res, "Maximum user limit reached");
+    }
+
+    const user = await db.User.create({ username, password });
     const token = jwtService.sign({ id: user.id, username: user.username });
-    return responseUtils.SuccessResponse(res,'User registered successfully', {data: user, token});
+
+    return responseUtils.SuccessResponse(res, "User registered successfully", {
+      user,
+      token,
+    });
   } catch (err) {
     console.error("[Register] Errror", err);
     return responseUtils.InternalServerErrorResponse(res, err.message);
@@ -32,53 +39,63 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return responseUtils.BadRequestResponse(res, 'Username and password are required');
+  if (!username || !password)
+    return responseUtils.BadRequestResponse(
+      res,
+      "Username and password are required",
+    );
 
   try {
-    const user = await db.User.findOne({ where: { username }});
+    const user = await db.User.findOne({ where: { username } });
     if (!user) {
-      return responseUtils.NotFoundResponse(res, 'User not found!');
+      return responseUtils.NotFoundResponse(res, "User not found!");
     }
 
     const ok = await user.comparePassword(password);
     if (!ok) {
-      return responseUtils.UnauthorizedResponse(res, 'Invalid credentials!');
+      return responseUtils.UnauthorizedResponse(res, "Invalid credentials!");
     }
 
     const token = jwtService.sign({ id: user.id, username: user.username });
-    return responseUtils.SuccessResponse(res,'User Login successfully', {data: user, token});
+
+    return responseUtils.SuccessResponse(res, "User Login successfully", {
+      user,
+      token,
+    });
   } catch (err) {
-    console.log("[Login] error", err)
+    console.log("[Login] error", err);
     return responseUtils.InternalServerErrorResponse(res, err.message);
   }
 };
 
 exports.profile = async (req, res) => {
-  try{
-    const user = await db.User.findOne({ where: { id: req.user.id }});
+  try {
+    const user = await db.User.findOne({ where: { id: req.user.id } });
     if (!user) {
-      return responseUtils.NotFoundResponse(res, 'User not found!');
+      return responseUtils.NotFoundResponse(res, "User not found!");
     }
 
-    return responseUtils.SuccessResponse(res,'User Profile successfully', user);
-  }catch(err){
+    return responseUtils.SuccessResponse(res, "User Profile successfully", {
+      data: user,
+    });
+  } catch (err) {
     console.error("[Profile] Error", err);
     return responseUtils.InternalServerErrorResponse(res, err.message);
   }
-}
+};
 
 exports.logout = async (req, res) => {
-  try{
-    const user = await db.User.findOne({ where: { id: req.user.id }});
+  try {
+    const user = await db.User.findOne({ where: { id: req.user.id } });
     if (!user) {
-      return responseUtils.NotFoundResponse(res, 'User not found!');
+      return responseUtils.NotFoundResponse(res, "User not found!");
     }
-    
-    await jwtService.destroyToken(user)
 
-    return responseUtils.SuccessResponse(res,'User Logout successfully');
-  }catch(err){
+    await jwtService.destroyToken(user);
+
+    return responseUtils.SuccessResponse(res, "User Logout successfully");
+  } catch (err) {
     console.error("[Logout] Error", err);
     return responseUtils.InternalServerErrorResponse(res, err.message);
   }
-}
+};

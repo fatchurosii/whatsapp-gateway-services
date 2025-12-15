@@ -3,6 +3,7 @@ function buildResponse({
   message = "",
   data = null,
   errors = undefined,
+  meta = undefined
 }) {
   const base = {
     status,
@@ -12,21 +13,25 @@ function buildResponse({
   if (errors !== undefined && errors !== null) {
     base.errors = errors;
   }
+  if (meta !== undefined && meta !== null) {
+    base.meta = meta;
+  }
 
   return base;
 }
 
-function PaginatedResponse(res, message, data) {
+function PaginatedResponse(res, message, data, meta = {}) {
   const code = 200;
 
   const payload = buildResponse({
     status: "success",
     message: message,
     data,
+    meta,
     errors: null,
   });
 
-  return res.status(code).json({ ...payload, data });
+  return res.status(code).json(payload);
 }
 
 function ErrorResponse(
