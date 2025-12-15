@@ -3,28 +3,14 @@ name: Node.js CD
 on:
   push:
     branches: ["dev/v2"]
-  pull_request:
-    branches: ["dev/v2"]
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     environment: Deploy Actions
 
-    strategy:
-      matrix:
-        node-version: [20.x]
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          
-      - name: Deploy
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.HOST }}
@@ -32,24 +18,27 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: 22
           script: |
+            set -e
+            
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            
+            nvm use 20
+            
+            echo "Node: $(node -v)"
+            echo "NPM : $(npm -v)"
+            echo "PM2 : $(pm2 -v)"
+            
+            export NODE_OPTIONS="--max-old-space-size=512"
             
             cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
-            git fetch --all
+            
+            git fetch origin
             git reset --hard origin/dev/v2
-            git checkout dev/v2
-            git pull origin dev/v2
             
-            if [ -f package-lock.json ]; then
-              npm ci --prefer-offline --no-audit --no-fund || npm install --prefer-offline --no-audit --no-fund
-            else
-              npm install --prefer-offline --no-audit --no-fund
-            fi
+            npm ci --prefer-offline --no-audit --no-fund || npm install --prefer-offline --no-audit --no-fund
             
-            if [ -f ecosystem.config.js ]; then
-              pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
-            else
-              pm2 restart whatsapp-gateway || pm2 start --name whatsapp-gateway npm -- start
-            fi
+            pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
             pm2 save
             
-            echo "Deploy finished; node: $(node -v), pm2: $(pm2 -v || true)"
+            echo "Deploy success"
