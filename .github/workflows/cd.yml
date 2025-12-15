@@ -23,43 +23,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-
-      - name: debug server config
-        shell: bash
-        run: |
-          # check host
-          if [ -z "${{ secrets.HOST }}" ]; then
-              echo "ERROR: HOST secret is empty or missing"
-              exit 1
-          else
-              echo "OK: HOST secret is present"
-          fi
-
-          # check username
-          if [ -z "${{ secrets.USERNAME }}" ]; then
-              echo "ERROR: USERNAME secret is empty or missing"
-              exit 1
-          else
-              echo "OK: USERNAME secret is present"
-          fi
-
-          # check ssh key
-          if [ -z "${{ secrets.SSH_KEY }}" ]; then
-              echo "ERROR: SSH_KEY secret is empty or missing"
-              exit 1
-          else
-              echo "OK: SSH_KEY secret is present"
-              header=$(echo "${{ secrets.SSH_KEY }}" | sed -n '1p' || true)
-              if echo "$header" | grep -Ei 'BEGIN|OPENSSH' >/dev/null 2>&1; then
-                  echo "OK: SSH_KEY header detected: \"$header\""
-              else
-                  echo "WARN: SSH_KEY header not detected (key may be malformed)"
-              fi
-              len=$(echo -n "${{ secrets.SSH_KEY }}" | wc -c)
-              echo "SSH_KEY length (bytes): $len"
-          fi
-
-      - name: Deploy using ssh (install/check node v20 via nvm if needed)
+          
+      - name: Deploy
         uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.HOST }}
@@ -67,38 +32,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: 22
           script: |
-            set -euxo pipefail
             
-            export NVM_DIR="$HOME/.nvm"
-            
-            # Pastikan nvm tersedia di shell saat ini
-            if [ -s "$NVM_DIR/nvm.sh" ]; then
-              # shellcheck source=/dev/null
-              . "$NVM_DIR/nvm.sh"
-            else
-              echo "nvm not found at $NVM_DIR/nvm.sh — abort"
-              exit 1
-            fi
-            
-            # Pakai Node 20 dan pastikan default
-            nvm install 20 --no-progress --silent
-            nvm alias default 20
-            nvm use 20
-            
-            # Verifikasi
-            echo "Using node: $(which node) $(node -v)"
-            echo "Using npm: $(which npm) $(npm --version)"
-            
-            # Pastikan pm2 terinstal pada node v20 (agar pm2 menunjuk ke node yang sama)
-            if ! command -v pm2 >/dev/null 2>&1; then
-              npm install -g pm2
-            fi
-            echo "pm2 -> $(which pm2)"
-            
-            # (opsional) jika pm2 sebelumnya diinstall global di node lain, paksa reinstall agar symlink sesuai node v20:
-            # npm install -g pm2
-            
-            # lanjutkan deploy: checkout, install deps dan restart
             cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
             git fetch --all
             git reset --hard origin/dev/v2

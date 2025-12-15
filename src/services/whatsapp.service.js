@@ -1,4 +1,3 @@
-// services/whatsapp.service.js
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const fs = require('fs');
@@ -93,19 +92,16 @@ async function createClient(clientId, opts = {}) {
     store.client = client;
     registerEvents(client, clientId);
 
-    // initialize might take time; registerEvents will update store.isReady and store.qr
     await client.initialize();
     console.log(`[${clientId}] initialize() resolved`);
   } catch (err) {
     console.error(`[${clientId}] Initialization failed:`, err);
-    // cleanup partial store
     await destroyClient(clientId);
     throw err;
   } finally {
     store.initializing = false;
   }
 
-  // Return the whole store so caller dapat baca isReady/qr/client
   return store;
 }
 
@@ -166,8 +162,6 @@ function getStatus(clientId) {
     isReady: !!store.isReady,
     initializing: !!store.initializing,
     qrAvailable: !!store.qr,
-    // optionally include raw qr string (dangerous to return to client in prod)
-    // qr: store.qr
   };
 }
 
