@@ -10,7 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: () => uuidv7(),
     },
     name: {type: DataTypes.STRING(50), allowNull:false, validate:{notEmpty:true}},
-    whatsapp_number: { type: DataTypes.STRING(20), allowNull:false, validate:{notEmpty:true} },
+    whatsappNumber: { type: DataTypes.STRING(20), allowNull:false, validate:{notEmpty:true} },
     deviceKey: { type: DataTypes.STRING(50), allowNull: false, defaultValue: () => generateRandomKey(16) },
     clientStatus:{type: Boolean, defaultValue: false},
     createdAt: { type: DataTypes.DATE, allowNull: false },
