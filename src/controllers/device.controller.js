@@ -35,7 +35,7 @@ exports.store = async (req, res) => {
     }
     const device = await db.Device.create({
       name: nameTrim,
-      whatsapp_number: whatsappNumberTrim,
+      whatsappNumber: whatsappNumberTrim,
     });
 
     return responseUtils.SuccessResponse(
@@ -54,7 +54,7 @@ exports.getDevicePaginated = async (req, res) => {
     const { page, limit, offset, sort, order } = getPaginationParams(
       req.query,
       {
-        allowedSortFields: ["id", "name", "whatsapp_number"],
+        allowedSortFields: ["id", "name", "whatsappNumber"],
         defaultSort: "id",
       },
     );
