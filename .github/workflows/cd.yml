@@ -19,26 +19,31 @@ jobs:
           port: 22
           script: |
             set -e
-            
+          
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-            
+          
+            nvm install 20
             nvm use 20
-            
+          
             echo "Node: $(node -v)"
             echo "NPM : $(npm -v)"
             echo "PM2 : $(pm2 -v)"
-            
+          
             export NODE_OPTIONS="--max-old-space-size=512"
-            
+          
             cd /home/fatchurrosii/workspace/app/services/whatsapp-gateway
-            
+          
             git fetch origin
             git reset --hard origin/dev/v2
-            
-            npm ci --prefer-offline --no-audit --no-fund || npm install --prefer-offline --no-audit --no-fund
-            
-            pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+          
+            npm ci --prefer-offline --no-audit --no-fund || \
+            npm install --prefer-offline --no-audit --no-fund
+          
+            pm2 reload ecosystem.config.js --env production || \
+            pm2 start ecosystem.config.js --env production
+          
             pm2 save
-            
+          
             echo "Deploy success"
+

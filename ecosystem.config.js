@@ -17,6 +17,7 @@ const appName = createSlug(appNameRaw);
 
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+const execPath = process.execPath;
   
 module.exports = {
   apps: [
@@ -26,7 +27,7 @@ module.exports = {
       cwd: __dirname,
       exec_mode: 'cluster',
       instances: 1,
-      interpreter: process.env.NODE_INTERPRETER || '/home/ubuntu/.nvm/versions/node/v20.19.5/bin/node',
+      interpreter: execPath,
       watch: false,
       max_memory_restart: '512M',
       env: {
